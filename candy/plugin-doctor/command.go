@@ -248,6 +248,7 @@ func runDoctorChecks(distro Distro, hr hostReport) []CheckGroup {
 			Required: false,
 			Checks: []DoctorCheckResult{
 				checkGvproxyDoctor(distro),
+				checkAardvarkNetns(),
 			},
 		})
 	}
@@ -524,6 +525,95 @@ func checkLibvirtSocket(distro Distro) DoctorCheckResult {
 		Detail:      sockPath,
 		InstallHint: hint,
 	}
+}
+
+// checkAardvarkNetns detects a STRANDED aardvark-dns: the process is alive, but it is
+// serving inside a network namespace podman no longer uses, so container-name resolution
+// silently fails for every container on the host.
+//
+// How it happens: podman tears the rootless network namespace down when the container count
+// reaches zero and creates a fresh one on the next start. aardvark-dns is not restarted with
+// it, so it keeps listening on the bridge address inside the DEAD namespace. Nothing looks
+// wrong -- the process exists, the bridge exists in the new namespace, and the zone file is
+// correct and current -- but 10.89.0.1:53 has no listener where containers actually query.
+// Every subsequent `getent hosts <peer>` returns empty, which surfaces far from the cause as
+// "cannot resolve <name>" inside a bed.
+//
+// A disposable bed triggers this routinely: its teardown removes the last containers on an
+// otherwise idle host. That is why the symptom appears AFTER a green run rather than during it.
+//
+// Presence checks cannot catch this, which is the point of comparing namespaces instead.
+func checkAardvarkNetns() DoctorCheckResult {
+	pid := aardvarkPID()
+	var got string
+	if pid != "" {
+		got, _ = os.Readlink("/proc/" + pid + "/ns/net")
+	}
+	want, _ := podmanRootlessNetns()
+	return aardvarkVerdict(pid, got, want)
+}
+
+// aardvarkVerdict is the decision, split from the /proc and podman reads so the stranded
+// case can be exercised without reproducing it on a live host -- which would mean breaking
+// DNS for every container to test a check.
+func aardvarkVerdict(pid, got, want string) DoctorCheckResult {
+	const name = "aardvark-dns namespace"
+
+	// Not running is not a fault: podman starts it on demand with the first container.
+	if pid == "" {
+		return DoctorCheckResult{Name: name, Status: CheckOK, Detail: "not running (started on demand)"}
+	}
+	// Without both namespaces there is no comparison to make; do not invent a verdict.
+	if got == "" || want == "" {
+		return DoctorCheckResult{Name: name, Status: CheckOK, Detail: "pid " + pid + " (namespace comparison unavailable)"}
+	}
+	if got == want {
+		return DoctorCheckResult{Name: name, Status: CheckOK, Detail: "pid " + pid + " in " + got}
+	}
+	return DoctorCheckResult{
+		Name:   name,
+		Status: CheckMissing,
+		Detail: "STRANDED: aardvark pid " + pid + " serves " + got + " but podman uses " + want +
+			" — container-name DNS is dead for every container",
+		InstallHint: "kill -9 " + pid + " && rm -f ${XDG_RUNTIME_DIR}/containers/networks/aardvark-dns/aardvark.pid" +
+			" && podman network reload --all",
+	}
+}
+
+// aardvarkPID returns the pid of a running aardvark-dns, or "" — by scanning /proc rather
+// than shelling out to pgrep, whose -f form also matches the caller's own command line.
+func aardvarkPID() string {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		pid := e.Name()
+		if pid == "" || pid[0] < '0' || pid[0] > '9' {
+			continue
+		}
+		b, err := os.ReadFile("/proc/" + pid + "/cmdline")
+		if err != nil || len(b) == 0 {
+			continue
+		}
+		if strings.Contains(strings.ReplaceAll(string(b), "\x00", " "), "aardvark-dns") {
+			return pid
+		}
+	}
+	return ""
+}
+
+// podmanRootlessNetns returns the namespace podman currently uses for rootless networking.
+func podmanRootlessNetns() (string, error) {
+	out, err := osexec.Command("podman", "unshare", "--rootless-netns",
+		"readlink", "/proc/self/ns/net").Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 // checkGvproxyDoctor checks gvproxy availability (same logic as checkGvproxy in machine.go).
