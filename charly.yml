@@ -7,8 +7,36 @@
 #
 # Declaring discover: is the whole fix: the candy is scanned, the CUE schema gate
 # applies, and the STOCK `charly box validate` step starts working with no workflow
-# change. This file declares no entities of its own - it only tells charly where to look.
-version: 2026.232.0520
+# change. This file also declares the R10 witness bed (below).
+version: 2026.249.2125
 discover:
     - path: candy
       recursive: true
+
+check-doctor-app:
+    local:
+        description: |-
+            Minimal kind:local template for the check-doctor-local bed — composes the
+            command-only candy/plugin-doctor (no install content) so the bed exercises the
+            externalized `charly doctor` CLI host-side.
+        candy:
+            - plugin-doctor
+check-doctor-local:
+    local:
+        from: check-doctor-app
+        host: local
+        disposable: true
+        lifecycle: dev
+        description: >-
+            Sole proof of the externalized `charly doctor` COMMAND (candy/plugin-doctor, command:doctor), the fifth welded-command externalization in the core-externalization program. A disposable kind:local deploy on host: local runs `charly doctor` host-side: doctor is COMPILED-IN and OWNS the whole report; its Invoke(OpRun) dispatches in-proc and reaches the genuine host-hardware facts it can't hold (the GPU/VFIO/device detection primitives + credentialHealth + the core install-hint/device tables) over the generic "hostprobe" HostBuild seam, which returns RAW FACTS ONLY. The command exits 0 and prints the host-dependency report — including the "Container Engine" group header — proving the externalized command + the hostprobe seam end-to-end.
+        plan:
+            - check: command=charly doctor exits 0 and prints the host-dependency report (proving the externalized doctor command owns the report + reaches the genuine host facts over the "hostprobe" HostBuild seam)
+              id: doctor-runs
+              exit_status: 0
+              stdout:
+                - contains: 'Container Engine'
+              context:
+                - runtime
+              command:
+                command: ${CHARLY_BIN} doctor
+                in_container: false
