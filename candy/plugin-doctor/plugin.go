@@ -24,12 +24,16 @@ package doctor
 
 import (
 	"context"
+	"embed"
 	"fmt"
 	"os"
 
 	"github.com/opencharly/sdk"
 	pb "github.com/opencharly/spec/proto"
 )
+
+//go:embed schema/*.cue
+var schemaFS embed.FS
 
 // NewProvider returns the doctor provider.
 func NewProvider() pb.ProviderServer { return &provider{} }
@@ -38,7 +42,9 @@ func NewProvider() pb.ProviderServer { return &provider{} }
 // req.GetReserved()):
 //   - command:doctor — the COMPILED-IN registry path resolves it (registerCompiledPlugin →
 //     providerRegistry.resolve(ClassCommand,"doctor") → dispatchInProcCommand → Invoke(OpRun) with
-//     the threaded in-proc reverse channel), plus the self-contained doc schema.
+//     the threaded in-proc reverse channel) — together with this plugin's OWN self-contained CUE
+//     schema (schema/doctor.cue) served over Describe. There is NO schema-less plugin: the schema
+//     is the uniform surface every plugin presents.
 //   - verb:freshness-guard, Phase=="preflight" — K5 seam-death of charly/main_freshness.go: the
 //     kernel's runPreflightPhase (charly/preflight_phase.go) enumerates every Phase=="preflight"
 //     provider and Invokes it with ops.OpPreflight right after Kong parses the command line,
@@ -49,7 +55,7 @@ func NewMeta() pb.PluginMetaServer {
 			{Class: "command", Word: "doctor"},
 			{Class: "verb", Word: "freshness-guard", Phase: sdk.PhasePreflight},
 		},
-		nil)
+		schemaFS)
 }
 
 // CliMain is the out-of-process CLI entrypoint (only reached when doctor is NOT compiled in). doctor
