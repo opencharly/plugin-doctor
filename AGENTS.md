@@ -4,8 +4,8 @@ Standalone plugin repo owning the externalized `charly doctor` command
 (`command:doctor`, compiled-in) plus the kernel's `verb:freshness-guard`
 preflight hook. The plugin is a Go module at `candy/plugin-doctor/` (module path
 `github.com/opencharly/plugin-doctor/candy/plugin-doctor`); the root `charly.yml`
-only declares `discover: candy` so the repo is a project and its candy is
-scanned.
+declares `discover: candy` (so the repo is a project and its candy is scanned)
+plus the `check-doctor-local` R10 witness bed.
 
 Canonical files:
 
@@ -22,8 +22,9 @@ Canonical files:
 - `candy/plugin-doctor/data.go` / `data.yml` — the embedded install-hint /
   device / distro tables.
 - `candy/plugin-doctor/schema/doctor.cue` — the self-contained `#DoctorPlugin`.
-- `charly.yml` — the root project manifest (`discover: candy`) plus the
-  `check-doctor-local` disposable local bed.
+- `charly.yml` — the root project manifest. Its top-level keys are `discover:`
+  (the `candy` scan) plus the `check-doctor-app` template and the
+  `check-doctor-local` disposable local bed (the R10 witness).
 - `.github/workflows/tag-on-merge.yml` — CalVer tag + `CHANGELOG/` on merge.
 - `README.md` — user overview only; never agent guidance.
 
@@ -60,6 +61,15 @@ Canonical files:
   for the peer `verb:gpu` / `verb:credential` dispatches. Reach those peers over
   `sdk.Executor.InvokeProvider` — never re-introduce a hidden core-command
   forward or a core-owned host-probe seam.
+- The GPU/VFIO/device detection primitives and the credential-store health probe
+  are NOT a core dependency: this plugin reaches `candy/plugin-gpu`'s `verb:gpu`
+  and `candy/plugin-secrets`' `verb:credential` PEER-TO-PEER over
+  `sdk.Executor.InvokeProvider`, and the install-hint / distro-family /
+  device-description / device-pattern tables are this plugin's own embed
+  (`data.go` / `data.yml`). The out-of-process `CliMain` path passes a nil
+  executor, so those two peer calls degrade to zero values (the report still
+  renders, minus the two peer-plugin-backed sections); the canonical placement
+  stays compiled-in.
 
 ## Landing
 

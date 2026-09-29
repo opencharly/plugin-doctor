@@ -18,24 +18,6 @@ registry / shell & TTY / podman machine), the pass/warn/fail verdicts, the human
 | `command:doctor` | the `charly doctor` CLI |
 | `verb:freshness-guard` | the kernel's preflight-phase freshness check |
 
-## How it works
-
-- The GPU/VFIO/device detection primitives and the credential-store health probe
-  are NOT a core dependency: this plugin reaches `candy/plugin-gpu`'s `verb:gpu`
-  and `candy/plugin-secrets`' `verb:credential` PEER-TO-PEER over its own
-  `sdk.Executor.InvokeProvider`, and the install-hint / distro-family /
-  device-description / device-pattern tables are this plugin's own embed
-  (`data.go` / `data.yml`).
-- `doctor` is COMPILED-IN (listed in `charly/charly.yml` `compiled_plugins`)
-  because its `Invoke(OpRun)` needs the in-proc reverse channel for those two
-  peer-plugin dispatches. The out-of-process `CliMain` path passes a nil
-  executor, so those two peer calls degrade to zero values (the report still
-  renders, minus the two peer-plugin-backed sections); the canonical placement
-  stays compiled-in.
-- `command:doctor` dispatches through the compiled-in registry path with the
-  threaded in-proc reverse channel. The served CUE schema carries no
-  `plugin_input` (the args are plain CLI tokens).
-
 ## How to use it
 
 The command is compiled in — no candy composition is needed:
@@ -44,6 +26,9 @@ The command is compiled in — no candy composition is needed:
 charly doctor
 charly doctor --json
 ```
+
+`charly doctor` exits 0 and prints the host-dependency report (or exits non-zero
+when a required dependency is missing); `--json` emits the same report as JSON.
 
 ## Layout
 
