@@ -1,18 +1,53 @@
 # plugin-doctor
 
-The `plugin-doctor` plugin candy of the [opencharly/charly](https://github.com/opencharly/charly)
-candy library, as a standalone repo (the candy de-submodule cutover, plugin
-kind). The Go module lives at `candy/plugin-doctor/` with module path
-`github.com/opencharly/plugin-doctor/candy/plugin-doctor`; the charly resolver fetches this repo at the pinned tag and
-the compiled-in wiring imports the module at that path.
+The `charly doctor` host-dependency-status surface for OpenCharly — the
+externalized command plugin (`command:doctor`, compiled-in) plus the kernel's
+`verb:freshness-guard` preflight hook.
 
-## Platforms
+The plugin owns the command end to end: the flag grammar (`--json`), the entire
+check list + group orchestration (container engine / build infra / service
+management / VMs / VFIO / encrypted storage / secret storage / tunnels / merge &
+registry / shell & TTY / podman machine), the pass/warn/fail verdicts, the human
++ JSON report formatting, the exit code, AND the pure host ops it runs itself
+(binary probes, file reads).
 
-Builds for `linux/amd64`, `linux/arm64`, `linux/arm/v7` and `linux/386`. The 32-bit targets
-work because of the sdk's 32-bit fix
-([opencharly/sdk#263](https://github.com/opencharly/sdk/pull/263), issue
-[#262](https://github.com/opencharly/sdk/issues/262)) — `charly`'s loader
-host-builds this plugin with `CGO_ENABLED=0`, so the artifact is a static
-binary, which is what a 32-bit appliance without a glibc toolchain (such as
-a JetKVM's uClibc armv7 userland) runs. Nothing extra is needed to use it: install
-`charly` and it builds the plugin for the host it runs on.
+## What it provides
+
+| Capability | Surface |
+|---|---|
+| `command:doctor` | the `charly doctor` CLI |
+| `verb:freshness-guard` | the kernel's preflight-phase freshness check |
+
+## How to use it
+
+The command is compiled in — no candy composition is needed:
+
+```bash
+charly doctor
+charly doctor --json
+```
+
+`charly doctor` exits 0 and prints the host-dependency report (or exits non-zero
+when a required dependency is missing); `--json` emits the same report as JSON.
+
+## Layout
+
+- `candy/plugin-doctor/` — the plugin module: `plugin.go` (the provider +
+  `NewProvider()` / `NewMeta()` / `CliMain`), `provider.go` (the `Invoke(OpRun)`
+  path), `command.go` (the CLI + check orchestration), `freshness.go` (the
+  ported `verb:freshness-guard` logic), `hostfacts.go` (the peer-plugin
+  dispatches), `data.go` / `data.yml` (the embedded tables), `schema/doctor.cue`
+  (the self-contained `#DoctorPlugin`), the Go tests, `cmd/serve/main.go`.
+- `charly.yml` — the root project manifest (`discover: candy`) plus the
+  `check-doctor-local` disposable local bed.
+- `.github/workflows/tag-on-merge.yml` — CalVer tag + `CHANGELOG/` on merge.
+
+## Related
+
+- Owning skill: `/charly-core:charly-doctor` — the host-dependency checker and
+  hardware detector for `charly doctor`. This candy carries no `skill:` entity of
+  its own; the gap is tracked in
+  [opencharly/opencharly#291](https://github.com/opencharly/opencharly/issues/291).
+- `/charly-internals:plugin` — the plugin/provider model, including the `command`
+  and `verb` provider classes.
+- [`opencharly/charly`](https://github.com/opencharly/charly) — the charly CLI.
