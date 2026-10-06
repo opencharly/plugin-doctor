@@ -278,6 +278,7 @@ func vmChecks(distro Distro) []DoctorCheckResult {
 		checkBinary(qemuBin, distro),
 		checkBinary("qemu-img", distro),
 		checkVirtiofsd(distro),
+		checkISORunner(distro),
 		checkBinary("virsh", distro),
 		checkBinary("ssh", distro),
 		checkLibvirtSocket(distro),
@@ -365,6 +366,31 @@ func vfioChecks(gpu gpuFacts) []DoctorCheckResult {
 		})
 	}
 	return checks
+}
+
+// checkISORunner probes for an ISO-9660 builder. `charly vm build` renders the
+// cloud-init NoCloud seed ISO via sdk/vmshared/cloud_init_iso.go WriteSeedISO,
+// which requires ANY of xorriso (preferred), genisoimage, or mkisofs on PATH.
+// Without one the build succeeds through the rootfs + disk + bootloader + initramfs
+// and then fails at the very last step, so a VM dependency section that omits it is
+// green on a host that cannot finish a VM build. Reports the first available, naming
+// it, so the satisfied requirement is visible.
+func checkISORunner(distro Distro) DoctorCheckResult {
+	for _, name := range []string{"xorriso", "genisoimage", "mkisofs"} {
+		if path, err := execLookPath(name); err == nil {
+			return DoctorCheckResult{
+				Name:   "iso-builder",
+				Status: CheckOK,
+				Detail: name + " (" + path + ")",
+			}
+		}
+	}
+	return DoctorCheckResult{
+		Name:        "iso-builder",
+		Status:      CheckMissing,
+		Detail:      "no xorriso/genisoimage/mkisofs on PATH",
+		InstallHint: distro.installHint("xorriso"),
+	}
 }
 
 // checkVirtiofsd checks for virtiofsd which may be installed outside PATH.

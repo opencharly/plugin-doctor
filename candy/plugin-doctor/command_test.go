@@ -49,6 +49,37 @@ func TestCheckBinaryMissing(t *testing.T) {
 	}
 }
 
+// TestCheckISORunner proves the VM build's ISO-builder prerequisite is probed: it
+// accepts ANY of xorriso/genisoimage/mkisofs (the three sdk/vmshared/cloud_init_iso.go
+// WriteSeedISO tries in order) and reports missing with the xorriso install hint when
+// none is present — the gap that let a doctor-green host fail a VM build at its last step.
+func TestCheckISORunner(t *testing.T) {
+	orig := execLookPath
+	defer func() { execLookPath = orig }()
+
+	// only mkisofs present -> OK, detail names it
+	execLookPath = func(name string) (string, error) {
+		if name == "mkisofs" {
+			return "/usr/bin/mkisofs", nil
+		}
+		return "", fmt.Errorf("not found: %s", name)
+	}
+	distro := Distro{ID: "arch", Name: "Arch Linux", Manager: "pacman -S", hints: map[string]map[string]string{"xorriso": {"arch": "libisoburn"}}}
+	if r := checkISORunner(distro); r.Status != CheckOK {
+		t.Errorf("with mkisofs present: Status = %d, want CheckOK", r.Status)
+	}
+
+	// none present -> missing, with the xorriso install hint
+	execLookPath = func(name string) (string, error) { return "", fmt.Errorf("not found: %s", name) }
+	r := checkISORunner(distro)
+	if r.Status != CheckMissing {
+		t.Errorf("with no ISO builder: Status = %d, want CheckMissing", r.Status)
+	}
+	if r.InstallHint != "pacman -S libisoburn" {
+		t.Errorf("InstallHint = %q, want %q", r.InstallHint, "pacman -S libisoburn")
+	}
+}
+
 func TestGroupStatusOrLogic(t *testing.T) {
 	// At least one OK -> group OK
 	g := CheckGroup{
