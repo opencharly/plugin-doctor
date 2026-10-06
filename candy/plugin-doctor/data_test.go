@@ -37,14 +37,16 @@ func TestDeviceDescriptionsFromEmbedded(t *testing.T) {
 // parse breakage.
 func TestInstallHintsFromEmbedded(t *testing.T) {
 	got := doctorData.InstallHints
-	if len(got) != 19 {
-		t.Fatalf("InstallHints has %d binaries, want 19", len(got))
+	if len(got) != 20 {
+		t.Fatalf("InstallHints has %d binaries, want 20", len(got))
 	}
 	cases := []struct{ bin, distro, want string }{
 		{"docker", "fedora", "docker-ce"},
 		{"podman", "debian", "podman"},
 		{"qemu-system-x86_64", "debian", "qemu-system-x86"},
 		{"qemu-system-aarch64", "debian", "qemu-system-arm"},
+		{"xorriso", "arch", "libisoburn"},
+		{"xorriso", "fedora", "xorriso"},
 		{"virsh", "fedora", "libvirt-client"},
 		{"script", "debian", "bsdutils"},
 		{"cloudflared", "arch", "AUR: yay -S cloudflared-bin"},

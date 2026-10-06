@@ -12,6 +12,10 @@ install_hints:
     qemu-system-aarch64: {arch: qemu-full, fedora: qemu-kvm, debian: qemu-system-arm}
     qemu-img: {arch: qemu-img, fedora: qemu-img, debian: qemu-utils}
     virtiofsd: {arch: virtiofsd, fedora: virtiofsd, debian: virtiofsd}
+    # xorriso's Arch package is libisoburn (it ships /usr/bin/xorriso); the VM build's
+    # cloud-init seed ISO needs one of xorriso/genisoimage/mkisofs, and xorriso is
+    # preferred by sdk/vmshared/cloud_init_iso.go WriteSeedISO.
+    xorriso: {arch: libisoburn, fedora: xorriso, debian: xorriso}
     virsh: {arch: libvirt, fedora: libvirt-client, debian: libvirt-clients}
     ssh: {arch: openssh, fedora: openssh-clients, debian: openssh-client}
     script: {arch: util-linux, fedora: util-linux, debian: bsdutils}
