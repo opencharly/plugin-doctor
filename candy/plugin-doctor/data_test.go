@@ -59,3 +59,19 @@ func TestInstallHintsFromEmbedded(t *testing.T) {
 		}
 	}
 }
+
+// TestDistroFamilyMapCarriesArchDerivatives is the R7 proof for opencharly/charly#883: the libvirt
+// check picks its Arch-family install hint through distroFamily(), and this map is what that resolver
+// reads. Before cachyos was listed, a CachyOS host (ID "cachyos") resolved to itself, fell through to
+// `systemctl --user enable --now libvirtd.socket` - a command that installs nothing on a host class with
+// no systemd user units - while the bed machinery spawned the daemon on demand and worked. This test
+// fails without that entry.
+func TestDistroFamilyMapCarriesArchDerivatives(t *testing.T) {
+	d := Distro{ID: "cachyos", family: doctorData.DistroFamilyMap}
+	if got := d.distroFamily(d.ID); got != "arch" {
+		t.Errorf("distroFamily(cachyos) = %q, want %q - the libvirt hint would not resolve to the arch family", got, "arch")
+	}
+	if got := d.distroFamily("ubuntu"); got != "debian" {
+		t.Errorf("distroFamily(ubuntu) = %q, want %q (the map's existing behaviour must not regress)", got, "debian")
+	}
+}
