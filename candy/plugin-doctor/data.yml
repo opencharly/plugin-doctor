@@ -68,3 +68,4 @@ distro_family_map:
     linuxmint: debian
     rhel: fedora
     centos: fedora
+    cachyos: arch
