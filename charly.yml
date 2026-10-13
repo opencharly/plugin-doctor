@@ -34,6 +34,9 @@ check-doctor-local:
               exit_status: 0
               stdout:
                 - contains: 'Container Engine'
+                - contains: 'libvirt session socket'
+                - contains: 'qemu-system-x86_64'
+                - contains: 'gocryptfs'
               context:
                 - runtime
               command:
