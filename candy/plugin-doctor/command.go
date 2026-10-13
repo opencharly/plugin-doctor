@@ -541,7 +541,7 @@ func checkLibvirtSocket(distro Distro) DoctorCheckResult {
 
 	// On Arch/modern distros, user-level libvirtd.socket may not exist.
 	// Check if system-level virtqemud is available instead.
-	if distro.ID == "arch" {
+	if distro.distroFamily(distro.ID) == "arch" {
 		hint = "sudo systemctl enable --now virtqemud.socket && sudo usermod -aG libvirt $USER"
 	}
 
