@@ -45,9 +45,8 @@ when a required dependency is missing); `--json` emits the same report as JSON.
 ## Related
 
 - Owning skill: `/charly-core:charly-doctor` — the host-dependency checker and
-  hardware detector for `charly doctor`. This candy carries no `skill:` entity of
-  its own; the gap is tracked in
-  [opencharly/opencharly#291](https://github.com/opencharly/opencharly/issues/291).
+  hardware detector for `charly doctor`, projected from this candy's own `skill:`
+  entity; the body is `.agents/skills/charly-doctor/SKILL.md`.
 - `/charly-internals:plugin` — the plugin/provider model, including the `command`
   and `verb` provider classes.
 - [`opencharly/charly`](https://github.com/opencharly/charly) — the charly CLI.
