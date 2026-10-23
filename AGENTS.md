@@ -31,9 +31,9 @@ Canonical files:
 ## Load these skills first (R0)
 
 - `/charly-core:charly-doctor` — the host-dependency checker and hardware
-  detector for `charly doctor`. Load before changing the check list or report.
-  This candy carries no `skill:` entity of its own; the gap is tracked in
-  [opencharly/opencharly#291](https://github.com/opencharly/opencharly/issues/291).
+  detector for `charly doctor`, OWNED HERE: the candy carries the `skill:` entity
+  and the prose in `.agents/skills/charly-doctor/SKILL.md`. Load before changing
+  the check list or report.
 - `/charly-internals:plugin` — the plugin authoring reference: the `plugin:`
   block, the `command` + `verb` provider classes, the per-plugin CUE-schema
   contract.
