@@ -46,9 +46,10 @@ var cdiSpecPaths = []string{
 // procDriverVersionPath is a package var so tests can point it at a fixture.
 var procDriverVersionPath = "/proc/driver/nvidia/version"
 
-// hostLibDirPath is where the host's own driver user-space lives (the files the injection mounts);
-// a package var so tests can point it at a fixture.
-var hostLibDirPath = "/usr/lib"
+// hostLibDirs are where the host's own driver user-space lives (the files the injection mounts):
+// plain /usr/lib on Arch/Fedora, and the multiarch subdirectory on Debian/Ubuntu. A variable so a
+// test can point it at a fixture.
+var hostLibDirs = []string{"/usr/lib", "/usr/lib64", "/usr/lib/x86_64-linux-gnu"}
 
 // cdiSpec is the slice of a CDI spec this check reads.
 type cdiSpec struct {
@@ -203,7 +204,7 @@ func cdiChecks(distro Distro) []DoctorCheckResult {
 	// files the toolkit mounts are the host's own libnvidia-*.so.<version>, so a half-upgraded host
 	// (userspace 620 against module 615) produces exactly the mismatch a container then inherits.
 	km := kernelModuleVersion(procDriverVersionPath)
-	hv := hostDriverLibVersion(hostLibDirPath)
+	hv := hostDriverLibVersion(hostLibDirs)
 	switch {
 	case km == "":
 		checks = append(checks, DoctorCheckResult{
@@ -215,7 +216,7 @@ func cdiChecks(distro Distro) []DoctorCheckResult {
 		checks = append(checks, DoctorCheckResult{
 			Name:   "CDI driver version",
 			Status: CheckWarning,
-			Detail: fmt.Sprintf("kernel module is %s but no versioned libnvidia-ml.so.<version> was found on the host to compare against", km),
+			Detail: fmt.Sprintf("kernel module is %s but no versioned libnvidia-ml.so.<version> was found in %v to compare against", km, hostLibDirs),
 		})
 	case hv != km:
 		checks = append(checks, DoctorCheckResult{
@@ -262,16 +263,18 @@ func detectRuntimeHook() bool {
 // hostDriverLibVersion reports the version of the host's own driver userspace — the files the
 // injection mounts — by reading the versioned libnvidia-ml filename, falling back to the SONAME
 // link's target.
-func hostDriverLibVersion(libDir string) string {
-	entries, err := os.ReadDir(libDir)
-	if err != nil {
-		return ""
-	}
-	for _, e := range entries {
-		n := e.Name()
-		if strings.HasPrefix(n, "libnvidia-ml.so.") {
-			if v := versionOfSuffix(n); v != "" {
-				return v
+func hostDriverLibVersion(libDirs []string) string {
+	for _, dir := range libDirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			n := e.Name()
+			if strings.HasPrefix(n, "libnvidia-ml.so.") {
+				if v := versionOfSuffix(n); v != "" {
+					return v
+				}
 			}
 		}
 	}

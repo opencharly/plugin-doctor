@@ -100,9 +100,9 @@ func TestKernelModuleVersion(t *testing.T) {
 // The verdicts: a broken spec must WARN (never OK), and a spec whose userspace differs from the
 // running kernel module must WARN with both versions named.
 func TestCDIChecksWarnOnBrokenShapes(t *testing.T) {
-	savedSpec, savedProc, savedLook, savedLib := cdiSpecPaths, procDriverVersionPath, execLookPath, hostLibDirPath
+	savedSpec, savedProc, savedLook, savedLib := cdiSpecPaths, procDriverVersionPath, execLookPath, hostLibDirs
 	defer func() {
-		cdiSpecPaths, procDriverVersionPath, execLookPath, hostLibDirPath = savedSpec, savedProc, savedLook, savedLib
+		cdiSpecPaths, procDriverVersionPath, execLookPath, hostLibDirs = savedSpec, savedProc, savedLook, savedLib
 	}()
 
 	execLookPath = func(string) (string, error) { return "/usr/bin/nvidia-ctk", nil }
@@ -151,7 +151,7 @@ func TestCDIChecksWarnOnBrokenShapes(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(libDir, "libnvidia-ml.so.620.70.06"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	hostLibDirPath = libDir
+	hostLibDirs = []string{libDir}
 	cdiSpecPaths = []string{writeTemp(t, "nvidia.yaml", cdiSpecWithMounts)}
 	checks = cdiChecks(Distro{})
 	var verCheck *DoctorCheckResult
@@ -171,8 +171,8 @@ func TestCDIChecksWarnOnBrokenShapes(t *testing.T) {
 	}
 
 	// (c) the healthy shape is OK: host userspace and module agree.
-	hostLibDirPath = t.TempDir()
-	if err := os.WriteFile(filepath.Join(hostLibDirPath, "libnvidia-ml.so.615.78.08"), nil, 0o644); err != nil {
+	hostLibDirs = []string{t.TempDir()}
+	if err := os.WriteFile(filepath.Join(hostLibDirs[0], "libnvidia-ml.so.615.78.08"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cdiSpecPaths = []string{writeTemp(t, "nvidia.yaml", cdiSpecWithMounts)}
