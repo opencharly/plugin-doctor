@@ -106,11 +106,6 @@ func isDriverLib(base string) bool {
 
 var versionRe = regexp.MustCompile(`\d+\.\d+(?:\.\d+)?`)
 
-// driverVersionOfLib pulls "615.78.08" out of "libnvidia-ml.so.615.78.08".
-func driverVersionOfLib(base string) string {
-	return versionRe.FindString(strings.TrimPrefix(base, "libnvidia-"))
-}
-
 // kernelModuleVersion reports the running NVIDIA kernel module's version. /proc is the host's, so
 // this is the authority the container's userspace must match.
 func kernelModuleVersion(procPath string) string {
@@ -242,7 +237,13 @@ func cdiChecks(distro Distro) []DoctorCheckResult {
 
 // runtimeHookPresent reports whether the NVIDIA container toolkit's runtime hook is configured —
 // the injection path that supplies the driver when the CDI spec itself declares no mounts.
-func runtimeHookPresent() bool {
+func runtimeHookPresent() bool { return runtimeHookDetect() }
+
+// runtimeHookDetect is the injectable seam behind runtimeHookPresent, so a test can assert both
+// verdicts of the CDI-spec check instead of accepting whichever one the test host happens to take.
+var runtimeHookDetect = detectRuntimeHook
+
+func detectRuntimeHook() bool {
 	if _, err := os.Stat("/etc/nvidia-container-runtime/config.toml"); err == nil {
 		return true
 	}

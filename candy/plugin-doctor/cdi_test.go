@@ -57,12 +57,12 @@ func TestSummariseCDICountsMountsAndDriverLibs(t *testing.T) {
 	if len(sum.DriverLibs) != 2 {
 		t.Errorf("driver libs = %v, want 2 entries", sum.DriverLibs)
 	}
-	if got := driverVersionOfLib("libnvidia-ml.so.615.78.08"); got != "615.78.08" {
-		t.Errorf("version from lib = %q, want 615.78.08", got)
+	// versionOfSuffix is the live path: a versioned name yields its version, a SONAME-only name
+	// yields nothing — comparing against "1" would be comparing against nothing.
+	if got := versionOfSuffix("libnvidia-ml.so.615.78.08"); got != "615.78.08" {
+		t.Errorf("version from a versioned lib = %q, want 615.78.08", got)
 	}
-	// A SONAME link carries no driver version, and the check must not invent one: comparing
-	// against "1" would be comparing against nothing. This is why the guard exists.
-	if got := driverVersionOfLib("libnvidia-ml.so.1"); got != "" {
+	if got := versionOfSuffix("libnvidia-ml.so.1"); got != "" {
 		t.Errorf("version from a SONAME-only name = %q, want empty", got)
 	}
 }
@@ -108,8 +108,11 @@ func TestCDIChecksWarnOnBrokenShapes(t *testing.T) {
 	execLookPath = func(string) (string, error) { return "/usr/bin/nvidia-ctk", nil }
 	procDriverVersionPath = writeTemp(t, "version", "NVRM version: ... 615.78.08 Release Build\n")
 
-	// (a) spec with no mounts: with a runtime hook present this is a datum (OK, naming the hook),
-	// without one it is a warning. Both directions are asserted so the check cannot drift.
+	// (a) spec with no mounts, BOTH directions, forced through the seam so the verdict can never
+	// depend on what the test host happens to have configured.
+	savedHook := runtimeHookDetect
+	defer func() { runtimeHookDetect = savedHook }()
+	runtimeHookDetect = func() bool { return false }
 	cdiSpecPaths = []string{writeTemp(t, "nvidia.yaml", cdiSpecWithoutMounts)}
 	checks := cdiChecks(Distro{})
 	var specCheck *DoctorCheckResult
@@ -121,13 +124,25 @@ func TestCDIChecksWarnOnBrokenShapes(t *testing.T) {
 	if specCheck == nil {
 		t.Fatal("no CDI spec check emitted")
 	}
-	// Either verdict is correct depending on whether a runtime hook is configured on the test
-	// host; both wordings must name the mechanism so the reader can act.
-	if specCheck.Status == CheckOK && !strings.Contains(specCheck.Detail, "runtime hook") {
-		t.Errorf("OK verdict must name the hook that supplies the driver, got %q", specCheck.Detail)
+	// No hook and no mounts: the check MUST warn, and name the mechanism.
+	if specCheck.Status != CheckWarning {
+		t.Errorf("no hook + 0 mounts = %v, want CheckWarning (detail: %q)", specCheck.Status, specCheck.Detail)
 	}
-	if specCheck.Status == CheckWarning && !strings.Contains(specCheck.Detail, "NO driver mounts") {
-		t.Errorf("warning verdict must name the mechanism, got %q", specCheck.Detail)
+	if !strings.Contains(specCheck.Detail, "NO driver mounts") {
+		t.Errorf("warning must name the mechanism, got %q", specCheck.Detail)
+	}
+	// With a hook present the same spec is a datum, and the detail must still name the hook.
+	runtimeHookDetect = func() bool { return true }
+	checks = cdiChecks(Distro{})
+	for _, c := range checks {
+		if c.Name == "CDI spec" {
+			if c.Status != CheckOK {
+				t.Errorf("hook + 0 mounts = %v, want CheckOK (detail: %q)", c.Status, c.Detail)
+			}
+			if !strings.Contains(c.Detail, "runtime hook") {
+				t.Errorf("OK verdict must name the hook that supplies the driver, got %q", c.Detail)
+			}
+		}
 	}
 
 	// (b) version skew: the HOST's own userspace is 620.70.06 while the module is 615.78.08. That
