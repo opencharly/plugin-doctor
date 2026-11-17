@@ -9,8 +9,10 @@ package doctor
 //
 //  1. A CDI spec that declares devices but NO driver mounts. Measured on a real host: both
 //     /etc/cdi/nvidia.yaml and /var/run/cdi/nvidia.yaml declared three devices, three deviceNodes
-//     and zero mounts, so nothing in the spec supplied a library. A container then resolves
-//     libnvidia-*/libcuda from whatever its IMAGE ships.
+//     and zero mounts — so the SPEC alone supplied no library. On that host the toolkit's runtime
+//     hook (/etc/nvidia-container-runtime/config.toml) still injected the driver, which is why the
+//     check reports the spec's mounts as a datum and warns only when NEITHER mechanism is present:
+//     the two paths are independent, and a host can legitimately run on the hook alone.
 //
 //  2. An image that ships its own driver user-space at a different version than the host. The
 //     injection mounts the host's VERSIONED files (libnvidia-ml.so.615.78.08, ...), the image's own
@@ -43,6 +45,10 @@ var cdiSpecPaths = []string{
 
 // procDriverVersionPath is a package var so tests can point it at a fixture.
 var procDriverVersionPath = "/proc/driver/nvidia/version"
+
+// hostLibDirPath is where the host's own driver user-space lives (the files the injection mounts);
+// a package var so tests can point it at a fixture.
+var hostLibDirPath = "/usr/lib"
 
 // cdiSpec is the slice of a CDI spec this check reads.
 type cdiSpec struct {
@@ -173,15 +179,22 @@ func cdiChecks(distro Distro) []DoctorCheckResult {
 			Detail:      fmt.Sprintf("%s declares no devices", sum.Path),
 			InstallHint: "sudo nvidia-ctk cdi generate --output=/var/run/cdi/nvidia.yaml",
 		})
-	case sum.MountCount == 0:
-		// THE case measured on this host, and the one that costs a GPU: the spec injects device
-		// nodes only, so every driver library a container resolves comes from its image.
+	case sum.MountCount == 0 && runtimeHookPresent():
+		// Measured on this host: the spec declares devices and no mounts, and the toolkit's runtime
+		// hook supplies the driver anyway. Reported as a datum rather than a warning because a
+		// container built from a stripped image resolves the injected host libraries correctly —
+		// verified: `nvidia-smi` in such a container reports the host's own driver version.
 		checks = append(checks, DoctorCheckResult{
 			Name:   "CDI spec",
-			Status: CheckWarning,
-			Detail: fmt.Sprintf("%s declares %d device(s) but NO driver mounts — containers get device nodes only and resolve libnvidia-*/libcuda from their own image, so an image at a different driver version shadows the host driver (nvidia-smi: Driver/library version mismatch; NVML consumers silently fall back to CPU)", sum.Path, sum.DeviceCount),
-			InstallHint: "sudo nvidia-ctk cdi generate --output=/var/run/cdi/nvidia.yaml " +
-				"(and check the generator can see the driver root)",
+			Status: CheckOK,
+			Detail: fmt.Sprintf("%s: kind=%s, %d device(s), 0 mounts — the driver comes from the toolkit's runtime hook (/etc/nvidia-container-runtime/config.toml), not from the spec; a spec-only consumer would get device nodes only", sum.Path, sum.Kind, sum.DeviceCount),
+		})
+	case sum.MountCount == 0:
+		checks = append(checks, DoctorCheckResult{
+			Name:        "CDI spec",
+			Status:      CheckWarning,
+			Detail:      fmt.Sprintf("%s declares %d device(s) but NO driver mounts, and no nvidia-container-runtime hook is configured — nothing supplies libnvidia-*/libcuda, so a container resolves them from its own image", sum.Path, sum.DeviceCount),
+			InstallHint: "sudo nvidia-ctk cdi generate --output=/var/run/cdi/nvidia.yaml",
 		})
 	default:
 		checks = append(checks, DoctorCheckResult{
@@ -191,14 +204,11 @@ func cdiChecks(distro Distro) []DoctorCheckResult {
 		})
 	}
 
-	// 3. Userspace vs kernel module. This is the check that fails on the shadowing bug: the
-	// version the spec mounts must equal the running module's, because the module is global and
-	// userspace must match it.
+	// 3. Host userspace vs the running kernel module. This is the pair the injection carries: the
+	// files the toolkit mounts are the host's own libnvidia-*.so.<version>, so a half-upgraded host
+	// (userspace 620 against module 615) produces exactly the mismatch a container then inherits.
 	km := kernelModuleVersion(procDriverVersionPath)
-	uv := ""
-	if len(sum.DriverLibs) > 0 {
-		uv = driverVersionOfLib(sum.DriverLibs[0])
-	}
+	hv := hostDriverLibVersion(hostLibDirPath)
 	switch {
 	case km == "":
 		checks = append(checks, DoctorCheckResult{
@@ -206,28 +216,79 @@ func cdiChecks(distro Distro) []DoctorCheckResult {
 			Status: CheckWarning,
 			Detail: "/proc/driver/nvidia/version is unreadable, so the host's running driver version cannot be established",
 		})
-	case uv == "":
+	case hv == "":
 		checks = append(checks, DoctorCheckResult{
 			Name:   "CDI driver version",
 			Status: CheckWarning,
-			Detail: fmt.Sprintf("kernel module is %s but the spec mounts no versioned driver library to compare against", km),
+			Detail: fmt.Sprintf("kernel module is %s but no versioned libnvidia-ml.so.<version> was found on the host to compare against", km),
 		})
-	case uv != km:
+	case hv != km:
 		checks = append(checks, DoctorCheckResult{
 			Name:        "CDI driver version",
 			Status:      CheckWarning,
-			Detail:      fmt.Sprintf("the spec mounts userspace %s while the running kernel module is %s — containers built from an image at either version will report a driver/library mismatch", uv, km),
-			InstallHint: "sudo nvidia-ctk cdi generate --output=/var/run/cdi/nvidia.yaml",
+			Detail:      fmt.Sprintf("host userspace is %s while the running kernel module is %s — every GPU container inherits that mismatch (reboot or finish the driver update)", hv, km),
+			InstallHint: "reboot (or reload the nvidia modules) so userspace and the kernel module match",
 		})
 	default:
 		checks = append(checks, DoctorCheckResult{
 			Name:   "CDI driver version",
 			Status: CheckOK,
-			Detail: fmt.Sprintf("userspace %s == kernel module %s", uv, km),
+			Detail: fmt.Sprintf("host userspace %s == running kernel module %s", hv, km),
 		})
 	}
 
 	return checks
+}
+
+// runtimeHookPresent reports whether the NVIDIA container toolkit's runtime hook is configured —
+// the injection path that supplies the driver when the CDI spec itself declares no mounts.
+func runtimeHookPresent() bool {
+	if _, err := os.Stat("/etc/nvidia-container-runtime/config.toml"); err == nil {
+		return true
+	}
+	entries, err := os.ReadDir("/usr/share/containers/oci/hooks.d")
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if strings.Contains(e.Name(), "nvidia") {
+			return true
+		}
+	}
+	return false
+}
+
+// hostDriverLibVersion reports the version of the host's own driver userspace — the files the
+// injection mounts — by reading the versioned libnvidia-ml filename, falling back to the SONAME
+// link's target.
+func hostDriverLibVersion(libDir string) string {
+	entries, err := os.ReadDir(libDir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		n := e.Name()
+		if strings.HasPrefix(n, "libnvidia-ml.so.") {
+			if v := versionOfSuffix(n); v != "" {
+				return v
+			}
+		}
+	}
+	return ""
+}
+
+// versionOfSuffix returns the dotted version at the end of a filename, or "" when there is none
+// (a SONAME like libnvidia-ml.so.1 carries no driver version).
+func versionOfSuffix(name string) string {
+	m := versionRe.FindAllString(name, -1)
+	if len(m) == 0 {
+		return ""
+	}
+	last := m[len(m)-1]
+	if strings.Count(last, ".") >= 1 && len(strings.Split(last, ".")[1]) > 1 {
+		return last
+	}
+	return ""
 }
 
 // lookPathAny returns the first of names resolvable on PATH.
