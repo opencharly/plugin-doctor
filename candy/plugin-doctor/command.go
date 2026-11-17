@@ -198,6 +198,11 @@ func runDoctorChecks(distro Distro, hr hostReport) []CheckGroup {
 			Checks:   vmChecks(distro),
 		},
 		{
+			Name:     "NVIDIA CDI (GPU device injection)",
+			Required: false,
+			Checks:   cdiChecks(distro),
+		},
+		{
 			Name:     "VFIO / GPU passthrough",
 			Required: false,
 			Checks:   vfioChecks(hr.GPU),
